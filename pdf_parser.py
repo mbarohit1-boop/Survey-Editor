@@ -413,8 +413,8 @@ def _extract_rows(lines: list[str]) -> list[dict[str, Any]]:
         w_idx = _next_non_empty_index(lines, qty_idx + 1)
         h_idx = _next_non_empty_index(lines, (w_idx + 1) if w_idx is not None else n)
 
-        order_width = _match_dim(lines[w_idx]) if w_idx is not None else None
-        order_height = _match_dim(lines[h_idx]) if h_idx is not None else None
+        order_height = _match_dim(lines[w_idx]) if w_idx is not None else None
+        order_width = _match_dim(lines[h_idx]) if h_idx is not None else None
 
         if order_width is None or order_height is None:
             i += 1
