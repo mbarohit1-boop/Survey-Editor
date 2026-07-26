@@ -43,21 +43,38 @@ from utils import row_tolerance
 TOL_WARN_MM = 75
 TOL_DANGER_MM = 200
 
-# Subtle row-background tint applied to the read-only cells of each row.
+# Very subtle row-background tint applied to the read-only cells of each row.
+# Kept low-saturation so the numbers stay crisp and the grid looks calm.
 _STATUS_BG = {
-    "ok":     "background-color: #e9f7ea;",   # soft green
-    "warn":   "background-color: #fff6d6;",   # soft amber
-    "danger": "background-color: #ffe0e0;",   # soft red
+    "ok":     "background-color: #f2fbf4;",   # barely-there green wash
+    "warn":   "background-color: #fffaed;",   # barely-there amber wash
+    "danger": "background-color: #fff2f2;",   # barely-there red wash
     "empty":  "",                              # not measured -> no tint
 }
-# Strong colour for the left "bar" column so it reads like a border strip.
+# Strong, saturated colour for the left marker column so it reads as a clean
+# status rail down the edge of the grid (this is the eye-catching accent).
 _STATUS_BAR = {
-    "ok":     "color: #2e7d32; font-weight: 700;",   # green
-    "warn":   "color: #c98a00; font-weight: 700;",   # amber
-    "danger": "color: #c62828; font-weight: 700;",   # red
-    "empty":  "color: rgba(0,0,0,0.08);",             # faint placeholder
+    "ok":     "color: #17a34a; font-weight: 700;",   # confident green
+    "warn":   "color: #e0a100; font-weight: 700;",   # warm amber
+    "danger": "color: #e02424; font-weight: 700;",   # clear red
+    "empty":  "color: #d7dbe0;",                       # faint neutral dot
 }
-_BAR_GLYPH = "█"  # the character shown in the marker column
+# Matching styling for the Status text column (dot + label share the hue).
+_STATUS_TEXT = {
+    "ok":     "color: #17a34a; font-weight: 600;",
+    "warn":   "color: #b07d00; font-weight: 600;",
+    "danger": "color: #e02424; font-weight: 700;",
+    "empty":  "color: #9aa0a6;",
+}
+# A slim vertical bar glyph reads as a rail/edge rather than a heavy block.
+_BAR_GLYPH = "▐"
+# Friendly dot + label shown in the Status column.
+_STATUS_DISPLAY = {
+    "ok":     "● OK",
+    "warn":   "● Review",
+    "danger": "● Critical",
+    "empty":  "○ —",
+}
 
 
 # =============================================================================
@@ -500,9 +517,15 @@ def _build_row_styles(df: pd.DataFrame) -> pd.DataFrame:
         status = _row_status(row) or "empty"
         bg = _STATUS_BG.get(status, "")
         bar = _STATUS_BAR.get(status, "")
+        txt = _STATUS_TEXT.get(status, "")
         for col in df.columns:
             if col == "marker":
-                styles.at[i, col] = bar
+                # coloured rail + centre it and drop the letter-spacing so the
+                # bar reads as one clean vertical stripe
+                styles.at[i, col] = bar + " text-align: center;"
+            elif col == "status":
+                # tinted background PLUS matching coloured dot/label text
+                styles.at[i, col] = bg + " " + txt
             elif col not in editable:
                 styles.at[i, col] = bg
     return styles
@@ -511,10 +534,19 @@ def _build_row_styles(df: pd.DataFrame) -> pd.DataFrame:
 def render_data_editor(df: pd.DataFrame, key: str) -> pd.DataFrame:
     column_order = [c for c in EXPECTED_COLS if c in df.columns]
 
+    # Build a *display* copy: friendly "● OK / ● Review / ● Critical" labels in
+    # the Status column. The raw status is recomputed on return, so downstream
+    # (overlay, Excel export) never sees these cosmetic labels.
+    display_df = df.copy()
+    if "status" in display_df.columns:
+        display_df["status"] = display_df.apply(
+            lambda r: _STATUS_DISPLAY.get(_row_status(r) or "empty", ""), axis=1
+        )
+
     # Apply conditional formatting via a pandas Styler. Styles land on the
-    # read-only cells (incl. the coloured 'marker' bar); the editable Survey
+    # read-only cells (incl. the coloured 'marker' rail); the editable Survey
     # W/H cells stay plain so copy/paste + keyboard nav feel like Excel.
-    styled = df.style.apply(_build_row_styles, axis=None)
+    styled = display_df.style.apply(_build_row_styles, axis=None)
 
     edited = st.data_editor(
         styled,
@@ -548,7 +580,7 @@ def render_data_editor(df: pd.DataFrame, key: str) -> pd.DataFrame:
                 help="Friendly room label (e.g. 'Master Bedroom')."),
             "remarks":       st.column_config.TextColumn("Remarks", width="large",
                 help="Free-text notes — stamped on the annotated PDF."),
-            "status":        st.column_config.TextColumn("Status", disabled=True, width="small"),
+            "status":        st.column_config.TextColumn("Status", disabled=True, width="medium"),
             "flag":          st.column_config.TextColumn(
                 "Flag", disabled=True, width="small",
                 help="⚠ Check = Ref/Location/System couldn't be confidently "
@@ -556,6 +588,14 @@ def render_data_editor(df: pd.DataFrame, key: str) -> pd.DataFrame:
                      "source order sheet before surveying."),
         },
     )
+
+    # ---- Clean the returned frame -----------------------------------------
+    # Drop the cosmetic 'marker' rail and restore the RAW status string so the
+    # overlay engine and Excel export keep working on clean, canonical data.
+    if "marker" in edited.columns:
+        edited = edited.drop(columns=["marker"])
+    if "status" in edited.columns:
+        edited["status"] = edited.apply(_row_status, axis=1)
     return edited
 
 
