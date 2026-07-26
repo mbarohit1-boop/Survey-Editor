@@ -380,6 +380,7 @@ EXPECTED_COLS = [
     "sales_line", "reference", "location", "description", "system",
     "order_width", "order_height",
     "survey_width", "survey_height", "room", "remarks", "status",
+    "flag",
 ]
 
 
@@ -407,6 +408,14 @@ def rows_to_dataframe(rows: list[dict[str, Any]]) -> pd.DataFrame:
         ),
         axis=1,
     )
+
+    # Surface parsing gaps instead of leaving Ref/Location/System silently
+    # blank — see pdf_parser._extract_rows / _find_subfields_anchor.
+    if "subfields_missing" not in df.columns:
+        df["subfields_missing"] = False
+    df["subfields_missing"] = df["subfields_missing"].fillna(False).astype(bool)
+    df["flag"] = df["subfields_missing"].apply(lambda m: "⚠ Check" if m else "")
+
     return df
 
 
@@ -440,6 +449,11 @@ def render_data_editor(df: pd.DataFrame, key: str) -> pd.DataFrame:
             "remarks":       st.column_config.TextColumn("Remarks", width="large",
                 help="Free-text notes — stamped on the annotated PDF."),
             "status":        st.column_config.TextColumn("Status", disabled=True, width="small"),
+            "flag":          st.column_config.TextColumn(
+                "Flag", disabled=True, width="small",
+                help="⚠ Check = Ref/Location/System couldn't be confidently "
+                     "parsed from the PDF for this row. Verify against the "
+                     "source order sheet before surveying."),
         },
     )
     return edited
