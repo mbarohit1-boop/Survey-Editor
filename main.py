@@ -27,20 +27,37 @@ from overlay import overlay_survey_data
 from utils import row_tolerance
 
 # -----------------------------------------------------------------------------
-# Optional AgGrid — powers LIVE per-cell conditional formatting in the survey
-# grid. If the package isn't installed we fall back to st.data_editor (which
-# cannot recolour cells live). Install with:  pip install streamlit-aggrid
+# Conditional-formatting palette for the survey grid.
+#
+# NOTE ON HOW THIS WORKS (important):
+#   st.data_editor only applies pandas-Styler styles to *non-editable* columns,
+#   and its underlying grid (glide-data-grid) only honours background-color and
+#   text color — CSS borders are ignored. So we do two things:
+#     1. Tint the whole row's *read-only* cells (subtle background) by tolerance.
+#     2. Add a coloured left "bar" column (█) that acts like a border strip.
+#   The Survey W/H cells stay editable (so Excel copy/paste + keyboard nav keep
+#   working); their neighbours carry the colour, which reads as a row highlight.
+#
+# Thresholds (per shop-floor SOP): diff > 75 mm -> amber, diff > 200 mm -> red.
 # -----------------------------------------------------------------------------
-try:
-    from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
-    from st_aggrid import DataReturnMode
-    _HAS_AGGRID = True
-except Exception:  # pragma: no cover - import guard
-    _HAS_AGGRID = False
+TOL_WARN_MM = 75
+TOL_DANGER_MM = 200
 
-# Tolerance thresholds for cell highlighting (mm)
-TOL_WARN_MM = 75    # > 75 mm  -> yellow
-TOL_DANGER_MM = 200  # > 200 mm -> red
+# Subtle row-background tint applied to the read-only cells of each row.
+_STATUS_BG = {
+    "ok":     "background-color: #e9f7ea;",   # soft green
+    "warn":   "background-color: #fff6d6;",   # soft amber
+    "danger": "background-color: #ffe0e0;",   # soft red
+    "empty":  "",                              # not measured -> no tint
+}
+# Strong colour for the left "bar" column so it reads like a border strip.
+_STATUS_BAR = {
+    "ok":     "color: #2e7d32; font-weight: 700;",   # green
+    "warn":   "color: #c98a00; font-weight: 700;",   # amber
+    "danger": "color: #c62828; font-weight: 700;",   # red
+    "empty":  "color: rgba(0,0,0,0.08);",             # faint placeholder
+}
+_BAR_GLYPH = "█"  # the character shown in the marker column
 
 
 # =============================================================================
@@ -413,6 +430,7 @@ def render_metadata(metadata: dict[str, Any]) -> None:
 # Data editor
 # =============================================================================
 EXPECTED_COLS = [
+    "marker",                       # coloured left "border" strip (read-only)
     "sales_line", "reference", "location", "description", "system",
     "order_width", "order_height",
     "survey_width", "survey_height", "room", "remarks", "status",
@@ -445,6 +463,9 @@ def rows_to_dataframe(rows: list[dict[str, Any]]) -> pd.DataFrame:
         axis=1,
     )
 
+    # The coloured left "bar" — just a glyph; its colour is set by the Styler.
+    df["marker"] = _BAR_GLYPH
+
     # Surface parsing gaps instead of leaving Ref/Location/System silently
     # blank — see pdf_parser._extract_rows / _find_subfields_anchor.
     if "subfields_missing" not in df.columns:
@@ -455,120 +476,48 @@ def rows_to_dataframe(rows: list[dict[str, Any]]) -> pd.DataFrame:
     return df
 
 
-# -----------------------------------------------------------------------------
-# JavaScript cell-style factory (AgGrid). Colours a Survey cell based on the
-# absolute difference between its Order value and its Survey value:
-#     diff <= 75 mm   -> green   (within tolerance)
-#     75 < diff <= 200 -> yellow (borderline — review)
-#     diff > 200 mm   -> red     (out of tolerance — critical)
-# Empty / unmeasured cells are left un-tinted so surveyors can see what's left.
-# -----------------------------------------------------------------------------
-def _cell_style_js(order_field: str) -> "JsCode":
-    return JsCode(
-        f"""
-        function(params) {{
-            var s = params.value;
-            var o = params.data['{order_field}'];
-            if (s === null || s === undefined || s === '' ||
-                o === null || o === undefined || o === '') {{
-                return {{'textAlign': 'right'}};
-            }}
-            var diff = Math.abs(Number(o) - Number(s));
-            if (isNaN(diff)) {{ return {{'textAlign': 'right'}}; }}
-            if (diff > {TOL_DANGER_MM}) {{
-                return {{'backgroundColor': '#ff4d4d', 'color': 'white',
-                         'fontWeight': 'bold', 'textAlign': 'right'}};
-            }}
-            if (diff > {TOL_WARN_MM}) {{
-                return {{'backgroundColor': '#ffd966', 'color': '#000',
-                         'textAlign': 'right'}};
-            }}
-            return {{'backgroundColor': '#c6efce', 'color': '#000',
-                     'textAlign': 'right'}};
-        }}
-        """
+def _row_status(row: pd.Series) -> str:
+    """Tolerance status for a single row, reusing the shared SOP thresholds."""
+    return row_tolerance(
+        row.get("order_width"), row.get("order_height"),
+        row.get("survey_width"), row.get("survey_height"),
     )
 
 
-def _render_data_editor_aggrid(df: pd.DataFrame, key: str) -> pd.DataFrame:
-    """AgGrid grid with LIVE per-cell conditional formatting on Survey W/H."""
+def _build_row_styles(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Return a same-shaped DataFrame of CSS strings.
+
+    • The 'marker' column gets a strong colour  -> reads like a left border.
+    • Every OTHER read-only column gets a subtle background tint.
+    Editable columns (survey_width/height, room, remarks) are left blank —
+    st.data_editor ignores styles on editable columns anyway, and leaving them
+    un-tinted keeps the typing cells visually clean.
+    """
+    styles = pd.DataFrame("", index=df.index, columns=df.columns)
+    editable = {"survey_width", "survey_height", "room", "remarks"}
+    for i, row in df.iterrows():
+        status = _row_status(row) or "empty"
+        bg = _STATUS_BG.get(status, "")
+        bar = _STATUS_BAR.get(status, "")
+        for col in df.columns:
+            if col == "marker":
+                styles.at[i, col] = bar
+            elif col not in editable:
+                styles.at[i, col] = bg
+    return styles
+
+
+def render_data_editor(df: pd.DataFrame, key: str) -> pd.DataFrame:
     column_order = [c for c in EXPECTED_COLS if c in df.columns]
-    df = df[column_order].copy()
 
-    # AgGrid serialises NaN oddly — keep survey cells as clean blanks/numbers.
-    for col in ("order_width", "order_height", "survey_width", "survey_height"):
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+    # Apply conditional formatting via a pandas Styler. Styles land on the
+    # read-only cells (incl. the coloured 'marker' bar); the editable Survey
+    # W/H cells stay plain so copy/paste + keyboard nav feel like Excel.
+    styled = df.style.apply(_build_row_styles, axis=None)
 
-    gb = GridOptionsBuilder.from_dataframe(df)
-    gb.configure_default_column(
-        editable=False, resizable=True, sortable=True,
-        filter=True, wrapText=False,
-    )
-
-    headers = {
-        "sales_line": "Sales Line", "reference": "Ref", "location": "Location",
-        "description": "Config", "system": "System",
-        "order_width": "Ord W (mm)", "order_height": "Ord H (mm)",
-        "survey_width": "Survey W (mm)", "survey_height": "Survey H (mm)",
-        "room": "Room", "remarks": "Remarks", "status": "Status", "flag": "Flag",
-    }
-    for f, h in headers.items():
-        if f in df.columns:
-            gb.configure_column(f, header_name=h)
-
-    # Editable survey/notes columns
-    for f in ("survey_width", "survey_height"):
-        if f in df.columns:
-            gb.configure_column(
-                f,
-                editable=True,
-                type=["numericColumn", "numberColumnFilter"],
-                cellStyle=_cell_style_js(
-                    "order_width" if f == "survey_width" else "order_height"
-                ),
-            )
-    for f in ("room", "remarks"):
-        if f in df.columns:
-            gb.configure_column(f, editable=True)
-
-    gb.configure_grid_options(
-        singleClickEdit=True,
-        stopEditingWhenCellsLoseFocus=True,
-        enterNavigatesVertically=True,
-        enterNavigatesVerticallyAfterEdit=True,
-    )
-
-    grid_response = AgGrid(
-        df,
-        gridOptions=gb.build(),
-        key=key,
-        height=520,
-        theme="balham",
-        allow_unsafe_jscode=True,          # required for JsCode cellStyle
-        update_mode=GridUpdateMode.MODEL_CHANGED,
-        data_return_mode=DataReturnMode.AS_INPUT,
-        fit_columns_on_grid_load=False,
-        reload_data=False,
-    )
-
-    edited = pd.DataFrame(grid_response["data"])
-    # Re-coerce numerics after the round-trip through the JS grid.
-    for col in ("order_width", "order_height", "survey_width", "survey_height"):
-        if col in edited.columns:
-            edited[col] = pd.to_numeric(edited[col], errors="coerce")
-    return edited
-
-
-def _render_data_editor_fallback(df: pd.DataFrame, key: str) -> pd.DataFrame:
-    """Fallback grid (st.data_editor) — no live cell tinting available."""
-    st.caption(
-        "ℹ️ Install `streamlit-aggrid` (`pip install streamlit-aggrid`) to enable "
-        "live cell highlighting. Showing the standard editor for now."
-    )
-    column_order = [c for c in EXPECTED_COLS if c in df.columns]
     edited = st.data_editor(
-        df,
+        styled,
         key=key,
         use_container_width=True,
         hide_index=True,
@@ -576,6 +525,10 @@ def _render_data_editor_fallback(df: pd.DataFrame, key: str) -> pd.DataFrame:
         num_rows="fixed",
         height=520,   # the grid is the main event — give it real room to breathe
         column_config={
+            "marker":        st.column_config.TextColumn(
+                " ", disabled=True, width="small",
+                help="Tolerance flag · green = OK (≤75 mm) · "
+                     "amber = review (≤200 mm) · red = critical (>200 mm)."),
             "sales_line":    st.column_config.TextColumn("Sales Line", disabled=True, width="small"),
             "reference":     st.column_config.TextColumn("Ref",        disabled=True, width="small"),
             "location":      st.column_config.TextColumn("Location",   disabled=True, width="medium"),
@@ -604,21 +557,6 @@ def _render_data_editor_fallback(df: pd.DataFrame, key: str) -> pd.DataFrame:
         },
     )
     return edited
-
-
-def render_data_editor(df: pd.DataFrame, key: str) -> pd.DataFrame:
-    """
-    Render the survey grid with LIVE per-cell conditional formatting.
-
-    Survey W / Survey H cells recolour the instant a value is entered:
-        • diff ≤ 75 mm   -> green
-        • 75 < diff ≤ 200 -> yellow
-        • diff > 200 mm  -> red
-    Uses AgGrid when available; otherwise falls back to st.data_editor.
-    """
-    if _HAS_AGGRID:
-        return _render_data_editor_aggrid(df, key)
-    return _render_data_editor_fallback(df, key)
 
 
 # =============================================================================
