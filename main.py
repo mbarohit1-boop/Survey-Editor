@@ -67,80 +67,99 @@ CUSTOM_CSS = """
         --wcs-shadow:   0 1px 3px rgba(16,24,40,.05);
         --wcs-shadow-h: 0 4px 10px rgba(16,24,40,.08);
     }
-    .block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1400px; }
+    .block-container { padding-top: 1rem; padding-bottom: 2rem; max-width: 1400px; }
     html, body, [class*="css"] { font-family: 'Segoe UI', 'Inter', system-ui, sans-serif; }
 
-    /* -------- Branded Header -------- */
+    /* -------- Slim top bar (de-emphasized — the grid is the focus) -------- */
     .wcs-header {
-        background: linear-gradient(90deg, var(--wcs-primary) 0%, var(--wcs-accent) 60%, var(--wcs-accent2) 100%);
-        color: #fff; padding: 18px 26px; border-radius: var(--wcs-radius-lg);
+        background: #fff; border: 1px solid var(--wcs-border);
+        border-left: 3px solid var(--wcs-primary);
+        color: var(--wcs-ink); padding: 8px 16px; border-radius: 6px;
         display: flex; align-items: center; justify-content: space-between;
-        box-shadow: 0 4px 14px rgba(11,61,145,.18);
-        margin-bottom: var(--wcs-gap);
+        margin-bottom: 10px;
     }
-    .wcs-header .wcs-title { display: flex; align-items: center; gap: 14px; }
-    .wcs-header .wcs-title .wcs-logo { font-size: 34px; line-height: 1; }
-    .wcs-header .wcs-title h1 { font-size: 22px; margin: 0; font-weight: 600; letter-spacing: .3px; }
-    .wcs-header .wcs-title p  { margin: 2px 0 0 0; font-size: 13px; opacity: .88; }
-    .wcs-header .wcs-meta     { text-align: right; font-size: 12px; opacity: .9; }
-    .wcs-header .wcs-meta strong { font-size: 13px; }
+    .wcs-header .wcs-title { display: flex; align-items: center; gap: 8px; }
+    .wcs-header .wcs-title .wcs-logo { font-size: 16px; line-height: 1; }
+    .wcs-header .wcs-title h1 { font-size: 14px; margin: 0; font-weight: 600; color: var(--wcs-ink); }
+    .wcs-header .wcs-title p  { display: none; }  /* tagline dropped — noise, not needed every load */
+    .wcs-header .wcs-meta     { text-align: right; font-size: 11px; color: var(--wcs-muted); }
+    .wcs-header .wcs-meta strong { font-size: 11px; color: var(--wcs-muted); }
 
-    /* -------- Section titles (uniform across the page) -------- */
+    /* -------- Section titles -------- */
     .section-title {
-        font-size: 15px; font-weight: 600; color: var(--wcs-ink);
-        margin: var(--wcs-gap) 0 8px 0;
-        display: flex; align-items: center; gap: 8px;
+        font-size: 13px; font-weight: 600; color: var(--wcs-muted);
+        text-transform: uppercase; letter-spacing: .5px;
+        margin: 14px 0 6px 0;
+        display: flex; align-items: center; gap: 6px;
     }
     .section-title::before {
-        content: ""; width: 4px; height: 18px; background: var(--wcs-accent);
+        content: ""; width: 3px; height: 13px; background: var(--wcs-accent2);
         border-radius: 2px; display: inline-block;
     }
+    /* The grid's own title gets to be the loudest thing on the page */
+    .section-title.grid-title {
+        font-size: 16px; font-weight: 700; color: var(--wcs-ink);
+        text-transform: none; letter-spacing: 0; margin: 6px 0 8px 0;
+    }
+    .section-title.grid-title::before {
+        width: 4px; height: 18px; background: var(--wcs-primary);
+    }
 
-    /* -------- Metric Cards (uniform padding + min height) -------- */
+    /* -------- Compact tolerance chips (replaces the old large metric cards
+       for anything that isn't the primary grid) -------- */
+    .wcs-chip-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 2px 0; }
+    .wcs-chip {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: var(--wcs-bg-soft); border: 1px solid var(--wcs-border);
+        border-radius: 999px; padding: 3px 10px 3px 8px;
+        font-size: 12px; color: #344054;
+    }
+    .wcs-chip .chip-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .wcs-chip .chip-val { font-weight: 700; color: var(--wcs-ink); }
+    .wcs-chip.green .chip-dot { background: #12B76A; }
+    .wcs-chip.amber .chip-dot { background: #F79009; }
+    .wcs-chip.red   .chip-dot { background: #F04438; }
+    .wcs-chip.blue  .chip-dot { background: var(--wcs-accent2); }
+    .wcs-chip.grey  .chip-dot { background: #98A2B3; }
+
+    /* -------- Legacy metric card (kept only for the collapsed aggregate
+       expander at the bottom — no longer used inline in the main flow) -------- */
     .metric-card {
         background: #fff; border: 1px solid var(--wcs-border);
         border-left: 4px solid var(--wcs-accent);
         border-radius: var(--wcs-radius);
-        padding: 14px 16px; box-shadow: var(--wcs-shadow);
-        transition: transform .15s ease, box-shadow .15s ease;
-        min-height: 92px;
+        padding: 12px 14px; box-shadow: var(--wcs-shadow);
+        min-height: 76px;
     }
-    .metric-card:hover { transform: translateY(-1px); box-shadow: var(--wcs-shadow-h); }
     .metric-card .metric-label {
-        color: var(--wcs-muted); font-size: 12px;
+        color: var(--wcs-muted); font-size: 11px;
         text-transform: uppercase; letter-spacing: .6px; font-weight: 600;
     }
-    .metric-card .metric-value { color: var(--wcs-ink); font-size: 26px; font-weight: 700; margin-top: 4px; }
-    .metric-card .metric-sub   { color: var(--wcs-muted); font-size: 12px; margin-top: 2px; }
+    .metric-card .metric-value { color: var(--wcs-ink); font-size: 21px; font-weight: 700; margin-top: 2px; }
+    .metric-card .metric-sub   { color: var(--wcs-muted); font-size: 11px; margin-top: 2px; }
     .metric-card.green  { border-left-color: #12B76A; }
     .metric-card.amber  { border-left-color: #F79009; }
     .metric-card.red    { border-left-color: #F04438; }
     .metric-card.blue   { border-left-color: var(--wcs-accent2); }
     .metric-card.grey   { border-left-color: #98A2B3; }
 
-    /* -------- Tolerance Legend -------- */
+    /* -------- Tolerance legend — one quiet caption line, not a boxed card -------- */
     .wcs-legend {
-        display: flex; gap: 22px; flex-wrap: wrap;
-        background: var(--wcs-bg-soft); border: 1px solid var(--wcs-border);
-        border-radius: var(--wcs-radius);
-        padding: 10px 16px; margin: 10px 0 var(--wcs-gap) 0;
-        font-size: 13px; color: #344054;
+        display: flex; gap: 16px; flex-wrap: wrap;
+        padding: 0; margin: 0 0 10px 0;
+        font-size: 11.5px; color: var(--wcs-muted);
     }
-    .wcs-legend .legend-item { display: flex; align-items: center; gap: 8px; }
-    .wcs-legend .dot { width: 12px; height: 12px; border-radius: 50%;
-        display: inline-block;
-        box-shadow: 0 0 0 2px rgba(255,255,255,.9), 0 0 0 3px rgba(16,24,40,.06); }
+    .wcs-legend .legend-item { display: flex; align-items: center; gap: 5px; }
+    .wcs-legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
     .dot.green  { background: #12B76A; }
     .dot.amber  { background: #F79009; }
     .dot.red    { background: #F04438; }
     .dot.blue   { background: var(--wcs-accent2); }
     .dot.grey   { background: #98A2B3; }
 
-    /* -------- Uploader Section -------- */
+    /* -------- Uploader — minimal strip, not a big hero card once files exist -------- */
     .upload-section {
-        background: #fff; border: 1px dashed #B8C4D6;
-        border-radius: var(--wcs-radius-lg);
-        padding: 18px 20px; margin-top: 6px;
+        background: transparent; border: none; padding: 0; margin: 0 0 4px 0;
     }
     .upload-section h3 { margin: 0 0 6px 0; font-size: 16px; color: var(--wcs-ink); }
     .upload-section p  { margin: 0 0 10px 0; font-size: 13px; color: var(--wcs-muted); }
@@ -161,39 +180,46 @@ CUSTOM_CSS = """
         font-weight: 600; margin-top: 2px;
     }
 
-    /* -------- Aggregate card -------- */
+    /* -------- Aggregate card (now lives inside a collapsed expander) -------- */
     .aggregate-card {
-        background: linear-gradient(135deg, #EEF4FF 0%, var(--wcs-bg-soft) 100%);
-        border: 1px solid #B8C4D6; border-radius: var(--wcs-radius-lg);
-        padding: 18px 22px; margin-top: 24px;
+        background: var(--wcs-bg-soft);
+        border: 1px solid var(--wcs-border); border-radius: var(--wcs-radius);
+        padding: 14px 16px; margin-top: 4px;
     }
-    .aggregate-card h3 { margin: 0 0 12px 0; font-size: 16px; color: var(--wcs-primary); }
+    .aggregate-card h3 { margin: 0 0 10px 0; font-size: 14px; color: var(--wcs-ink); }
 
     /* -------- Empty-state hero (Module 6 polish) -------- */
     .empty-hero {
-        background: linear-gradient(135deg, #F8FAFC 0%, #EEF4FF 100%);
-        border: 1px solid var(--wcs-border); border-radius: var(--wcs-radius-lg);
-        padding: 42px 32px; text-align: center; margin: 8px 0 22px 0;
+        background: #F8FAFC;
+        border: 1px solid var(--wcs-border); border-radius: var(--wcs-radius);
+        padding: 32px 28px; text-align: center; margin: 6px 0 16px 0;
     }
-    .empty-hero .hero-icon { font-size: 56px; line-height: 1; margin-bottom: 10px; }
-    .empty-hero h2 { margin: 0 0 6px 0; color: var(--wcs-primary); font-size: 22px; }
-    .empty-hero p  { margin: 0 auto; color: var(--wcs-muted); font-size: 14px; max-width: 620px; }
+    .empty-hero .hero-icon { font-size: 40px; line-height: 1; margin-bottom: 8px; }
+    .empty-hero h2 { margin: 0 0 6px 0; color: var(--wcs-ink); font-size: 18px; font-weight: 600; }
+    .empty-hero p  { margin: 0 auto; color: var(--wcs-muted); font-size: 13px; max-width: 600px; }
     .empty-steps {
         display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-        gap: 14px; margin-top: 22px;
+        gap: 10px; margin-top: 16px;
     }
     .empty-step {
         background: #fff; border: 1px solid var(--wcs-border);
-        border-radius: var(--wcs-radius); padding: 14px 16px;
-        text-align: left; box-shadow: var(--wcs-shadow);
+        border-radius: var(--wcs-radius); padding: 12px 14px;
+        text-align: left;
     }
     .empty-step .step-num {
-        display: inline-block; width: 22px; height: 22px; line-height: 22px;
+        display: inline-block; width: 20px; height: 20px; line-height: 20px;
         text-align: center; background: var(--wcs-accent); color: #fff;
-        border-radius: 50%; font-size: 12px; font-weight: 700; margin-right: 6px;
+        border-radius: 50%; font-size: 11px; font-weight: 700; margin-right: 6px;
     }
-    .empty-step .step-title { font-weight: 600; color: var(--wcs-ink); font-size: 13px; }
-    .empty-step .step-body  { color: var(--wcs-muted); font-size: 12px; margin-top: 4px; }
+    .empty-step .step-title { font-weight: 600; color: var(--wcs-ink); font-size: 12.5px; }
+    .empty-step .step-body  { color: var(--wcs-muted); font-size: 11.5px; margin-top: 3px; }
+
+    /* -------- Grid card: the visual anchor of the page -------- */
+    .grid-card {
+        background: #fff; border: 1px solid var(--wcs-border);
+        border-radius: var(--wcs-radius); padding: 14px 16px 6px 16px;
+        box-shadow: var(--wcs-shadow); margin-bottom: 6px;
+    }
 
     /* -------- Footer -------- */
     .wcs-footer {
@@ -227,15 +253,9 @@ def render_header() -> None:
         <div class="wcs-header">
             <div class="wcs-title">
                 <div class="wcs-logo">🪟</div>
-                <div>
-                    <h1>WCS Survey Editor</h1>
-                    <p>Overlay site-survey dimensions on order PDFs · Flag discrepancies against tolerances</p>
-                </div>
+                <div><h1>WCS Survey Editor</h1></div>
             </div>
-            <div class="wcs-meta">
-                <div><strong>Fenesta</strong> · Manufacturing Ops</div>
-                <div>v0.5.0 · Polish pass</div>
-            </div>
+            <div class="wcs-meta">Fenesta · v0.5.0</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -246,10 +266,10 @@ def render_legend() -> None:
     st.markdown(
         """
         <div class="wcs-legend">
-            <div class="legend-item"><span class="dot green"></span> Within tolerance (≤ 75 mm)</div>
-            <div class="legend-item"><span class="dot amber"></span> Borderline (≤ 200 mm)</div>
-            <div class="legend-item"><span class="dot red"></span> Out of tolerance (&gt; 200 mm)</div>
-            <div class="legend-item"><span class="dot blue"></span> Not yet measured</div>
+            <div class="legend-item"><span class="dot green"></span> ≤75mm OK</div>
+            <div class="legend-item"><span class="dot amber"></span> ≤200mm review</div>
+            <div class="legend-item"><span class="dot red"></span> &gt;200mm critical</div>
+            <div class="legend-item"><span class="dot blue"></span> not measured</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -428,6 +448,7 @@ def render_data_editor(df: pd.DataFrame, key: str) -> pd.DataFrame:
         hide_index=True,
         column_order=column_order,
         num_rows="fixed",
+        height=520,   # the grid is the main event — give it real room to breathe
         column_config={
             "sales_line":    st.column_config.TextColumn("Sales Line", disabled=True, width="small"),
             "reference":     st.column_config.TextColumn("Ref",        disabled=True, width="small"),
@@ -476,19 +497,21 @@ def compute_counts(df: pd.DataFrame) -> dict[str, int]:
 
 
 def render_tolerance_metrics(counts: dict[str, int], total: int) -> None:
-    st.markdown('<div class="section-title">📊 Tolerance Summary</div>', unsafe_allow_html=True)
-    cols = st.columns(4)
     surveyed = total - counts["empty"]
     pct = f"{(surveyed / total * 100):.0f}%" if total else "—"
 
-    metric_card(cols[0], "Within Tolerance", str(counts["ok"]),
-                f"of {total} openings", "green")
-    metric_card(cols[1], "Borderline", str(counts["warn"]),
-                "review required", "amber")
-    metric_card(cols[2], "Out of Tolerance", str(counts["danger"]),
-                "action required", "red")
-    metric_card(cols[3], "Not Measured", str(counts["empty"]),
-                f"surveyed: {pct}", "blue")
+    st.markdown(
+        f"""
+        <div class="wcs-chip-row">
+            <span class="wcs-chip green"><span class="chip-dot"></span>OK <span class="chip-val">{counts['ok']}</span></span>
+            <span class="wcs-chip amber"><span class="chip-dot"></span>Review <span class="chip-val">{counts['warn']}</span></span>
+            <span class="wcs-chip red"><span class="chip-dot"></span>Critical <span class="chip-val">{counts['danger']}</span></span>
+            <span class="wcs-chip blue"><span class="chip-dot"></span>Not measured <span class="chip-val">{counts['empty']}</span></span>
+            <span class="wcs-chip grey">Surveyed <span class="chip-val">{pct}</span> of {total}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # =============================================================================
@@ -546,7 +569,7 @@ def process_file(file, idx: int) -> dict[str, Any]:
             )
             return {**empty_result, "metadata": metadata, "pdf_bytes": pdf_bytes}
 
-        # ---- Editable data grid -------------------------------------------
+        # ---- Editable data grid — the main event ---------------------------
         editor_key = (
             f"edited_{file.file_id if hasattr(file, 'file_id') else file.name}"
         )
@@ -559,6 +582,10 @@ def process_file(file, idx: int) -> dict[str, Any]:
                 if col in saved.columns:
                     df_source[col] = saved[col].values
 
+        st.markdown(
+            '<div class="section-title grid-title">✎ Survey Grid — enter Survey W/H, Room, Remarks</div>',
+            unsafe_allow_html=True,
+        )
         edited_df = render_data_editor(df_source, key=editor_key)
         st.session_state[editor_key + "_df"] = edited_df
 
@@ -637,10 +664,6 @@ def render_aggregate(results: list[dict[str, Any]]) -> None:
     files_processed = len(results)
     files_ok = sum(1 for r in results if r.get("parsed_ok"))
 
-    st.markdown(
-        '<div class="section-title">📈 Aggregate Summary — All Uploaded Files</div>',
-        unsafe_allow_html=True,
-    )
     st.markdown('<div class="aggregate-card">', unsafe_allow_html=True)
 
     cols = st.columns(5)
@@ -884,25 +907,13 @@ def render_empty_state() -> None:
 # Uploader + Footer
 # =============================================================================
 def render_uploader():
-    st.markdown('<div class="section-title">📤 Upload Order PDFs</div>',
-                unsafe_allow_html=True)
-    st.markdown(
-        """
-        <div class="upload-section">
-            <h3>Drop one or more order PDFs</h3>
-            <p>Each PDF is parsed automatically. Fill in the surveyed
-               width / height / room / remarks in the data grid — the tolerance
-               summary, annotated PDF, and Excel export all update live.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
     return st.file_uploader(
-        label="Select PDF file(s)",
+        label="📤 Upload order PDF(s)",
         type=["pdf"],
         accept_multiple_files=True,
         help="You can select multiple PDFs. Only .pdf files are accepted.",
         key="wcs_pdf_uploader",
+        label_visibility="visible",
     )
 
 
@@ -930,21 +941,15 @@ def main() -> None:
         render_footer()
         return
 
-    st.success(
-        f"✅ {len(uploaded)} file{'s' if len(uploaded) != 1 else ''} received. "
-        "Parsing…"
-    )
-
     # ---- Loop through uploaded files --------------------------------------
     results: list[dict[str, Any]] = []
     for idx, file in enumerate(uploaded):
         results.append(process_file(file, idx))
 
-    # ---- Aggregate summary ------------------------------------------------
-    render_aggregate(results)
-
-    # ---- Module 5 — Combined Excel export ---------------------------------
-    render_excel_export(results)
+    # ---- Aggregate summary + Excel export — collapsed, out of the grid's way
+    with st.expander("📈 Overall progress & export (all files)", expanded=False):
+        render_aggregate(results)
+        render_excel_export(results)
 
     render_footer()
 
