@@ -43,38 +43,28 @@ from utils import row_tolerance
 TOL_WARN_MM = 75
 TOL_DANGER_MM = 200
 
-# Very subtle row-background tint applied to the read-only cells of each row.
-# Kept low-saturation so the numbers stay crisp and the grid looks calm.
-_STATUS_BG = {
-    "ok":     "background-color: #f2fbf4;",   # barely-there green wash
-    "warn":   "background-color: #fffaed;",   # barely-there amber wash
-    "danger": "background-color: #fff2f2;",   # barely-there red wash
-    "empty":  "",                              # not measured -> no tint
-}
-# Strong, saturated colour for the left marker column so it reads as a clean
-# status rail down the edge of the grid (this is the eye-catching accent).
-_STATUS_BAR = {
-    "ok":     "color: #17a34a; font-weight: 700;",   # confident green
-    "warn":   "color: #e0a100; font-weight: 700;",   # warm amber
-    "danger": "color: #e02424; font-weight: 700;",   # clear red
-    "empty":  "color: #d7dbe0;",                       # faint neutral dot
-}
-# Matching styling for the Status text column (dot + label share the hue).
-_STATUS_TEXT = {
-    "ok":     "color: #17a34a; font-weight: 600;",
-    "warn":   "color: #b07d00; font-weight: 600;",
-    "danger": "color: #e02424; font-weight: 700;",
-    "empty":  "color: #9aa0a6;",
-}
-# A slim vertical bar glyph reads as a rail/edge rather than a heavy block.
-_BAR_GLYPH = "▐"
-# Friendly dot + label shown in the Status column.
-_STATUS_DISPLAY = {
-    "ok":     "● OK",
-    "warn":   "● Review",
-    "danger": "● Critical",
-    "empty":  "○ —",
-}
+# Bright, high-contrast highlights applied to the ORDER cells only:
+#   • Order W is coloured by |Order W − Survey W|
+#   • Order H is coloured by |Order H − Survey H|
+# Within tolerance (≤ 75 mm) stays PLAIN — no green — so only real
+# discrepancies strike out at a glance.
+_HL_WARN   = "background-color: #FFEB3B; color: #000000; font-weight: 700;"  # bright yellow
+_HL_DANGER = "background-color: #FF3B30; color: #FFFFFF; font-weight: 700;"  # bright red
+
+
+def _cell_highlight(order_val, survey_val) -> str:
+    """Return a bright CSS style for an Order cell based on its own diff."""
+    if order_val is None or survey_val is None:
+        return ""
+    try:
+        diff = abs(float(order_val) - float(survey_val))
+    except (TypeError, ValueError):
+        return ""
+    if diff > TOL_DANGER_MM:
+        return _HL_DANGER
+    if diff > TOL_WARN_MM:
+        return _HL_WARN
+    return ""  # within tolerance -> plain
 
 
 # =============================================================================
@@ -199,13 +189,13 @@ CUSTOM_CSS = """
         padding: 0; margin: 0 0 10px 0;
         font-size: 11.5px; color: var(--wcs-muted);
     }
-    .wcs-legend .legend-item { display: flex; align-items: center; gap: 5px; }
-    .wcs-legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-    .dot.green  { background: #12B76A; }
-    .dot.amber  { background: #F79009; }
-    .dot.red    { background: #F04438; }
-    .dot.blue   { background: var(--wcs-accent2); }
-    .dot.grey   { background: #98A2B3; }
+    .wcs-legend .legend-item { display: flex; align-items: center; gap: 6px; }
+    .wcs-legend .chip {
+        display: inline-block; padding: 1px 7px; border-radius: 4px;
+        font-size: 11px; font-weight: 700; line-height: 1.5;
+    }
+    .wcs-legend .chip-warn   { background: #FFEB3B; color: #000; }
+    .wcs-legend .chip-danger { background: #FF3B30; color: #fff; }
 
     /* -------- Uploader — minimal strip, not a big hero card once files exist -------- */
     .upload-section {
@@ -316,10 +306,12 @@ def render_legend() -> None:
     st.markdown(
         """
         <div class="wcs-legend">
-            <div class="legend-item"><span class="dot green"></span> ≤75mm OK</div>
-            <div class="legend-item"><span class="dot amber"></span> ≤200mm review</div>
-            <div class="legend-item"><span class="dot red"></span> &gt;200mm critical</div>
-            <div class="legend-item"><span class="dot blue"></span> not measured</div>
+            <div class="legend-item">
+                <span class="chip chip-warn">&gt; 75 mm</span> review
+            </div>
+            <div class="legend-item">
+                <span class="chip chip-danger">&gt; 200 mm</span> critical
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -328,7 +320,7 @@ def render_legend() -> None:
 
 def render_sidebar() -> None:
     with st.sidebar:
-        st.markdown("### ⚙️ Settings")
+        st.markdown("### Settings")
 
         st.text_input(
             "Surveyor Name",
@@ -340,24 +332,19 @@ def render_sidebar() -> None:
         st.text_input(
             "Project / Lot name",
             value=st.session_state.get("project_name", ""),
-            help="Used in the combined Excel filename (e.g. 'Prestige_T3').",
+            help="Used in the combined Excel filename.",
             key="project_name",
             placeholder="e.g. Prestige_T3_L34",
         )
 
         st.markdown("---")
-        st.markdown("**Tolerance thresholds** *(shop-floor SOP)*")
-        st.caption("• OK ≤ 75 mm\n\n• Warn ≤ 200 mm\n\n• Danger > 200 mm")
+        st.caption("Highlight thresholds  ·  > 75 mm review  ·  > 200 mm critical")
 
-        st.markdown("---")
-        if st.button("🔄 Clear all uploads & edits", use_container_width=True):
+        if st.button("Clear all uploads & edits", use_container_width=True):
             for k in list(st.session_state.keys()):
                 if k.startswith("edited_") or k == "wcs_pdf_uploader":
                     del st.session_state[k]
             st.rerun()
-
-        st.markdown("---")
-        st.caption("WCS Survey Editor · v0.5.0")
 
 
 # =============================================================================
@@ -447,11 +434,18 @@ def render_metadata(metadata: dict[str, Any]) -> None:
 # Data editor
 # =============================================================================
 EXPECTED_COLS = [
-    "marker",                       # coloured left "border" strip (read-only)
     "sales_line", "reference", "location", "description", "system",
     "order_width", "order_height",
     "survey_width", "survey_height", "room", "remarks", "status",
     "flag",
+]
+
+# The only columns shown in the grid, in this exact order. Everything else
+# (system, status, flag) stays hidden by default for a minimal view.
+GRID_COLUMN_ORDER = [
+    "sales_line", "description", "order_width", "order_height",
+    "reference", "location", "survey_width", "survey_height",
+    "room", "remarks",
 ]
 
 
@@ -480,9 +474,6 @@ def rows_to_dataframe(rows: list[dict[str, Any]]) -> pd.DataFrame:
         axis=1,
     )
 
-    # The coloured left "bar" — just a glyph; its colour is set by the Styler.
-    df["marker"] = _BAR_GLYPH
-
     # Surface parsing gaps instead of leaving Ref/Location/System silently
     # blank — see pdf_parser._extract_rows / _find_subfields_anchor.
     if "subfields_missing" not in df.columns:
@@ -505,48 +496,32 @@ def _build_row_styles(df: pd.DataFrame) -> pd.DataFrame:
     """
     Return a same-shaped DataFrame of CSS strings.
 
-    • The 'marker' column gets a strong colour  -> reads like a left border.
-    • Every OTHER read-only column gets a subtle background tint.
-    Editable columns (survey_width/height, room, remarks) are left blank —
-    st.data_editor ignores styles on editable columns anyway, and leaving them
-    un-tinted keeps the typing cells visually clean.
+    Only the ORDER cells are highlighted (they're read-only, so st.data_editor
+    can style them):
+        • Order W  -> bright colour by |Order W − Survey W|
+        • Order H  -> bright colour by |Order H − Survey H|
+    Within tolerance (≤ 75 mm) stays plain — no green. Everything else blank.
     """
     styles = pd.DataFrame("", index=df.index, columns=df.columns)
-    editable = {"survey_width", "survey_height", "room", "remarks"}
     for i, row in df.iterrows():
-        status = _row_status(row) or "empty"
-        bg = _STATUS_BG.get(status, "")
-        bar = _STATUS_BAR.get(status, "")
-        txt = _STATUS_TEXT.get(status, "")
-        for col in df.columns:
-            if col == "marker":
-                # coloured rail + centre it and drop the letter-spacing so the
-                # bar reads as one clean vertical stripe
-                styles.at[i, col] = bar + " text-align: center;"
-            elif col == "status":
-                # tinted background PLUS matching coloured dot/label text
-                styles.at[i, col] = bg + " " + txt
-            elif col not in editable:
-                styles.at[i, col] = bg
+        if "order_width" in df.columns:
+            styles.at[i, "order_width"] = _cell_highlight(
+                row.get("order_width"), row.get("survey_width")
+            )
+        if "order_height" in df.columns:
+            styles.at[i, "order_height"] = _cell_highlight(
+                row.get("order_height"), row.get("survey_height")
+            )
     return styles
 
 
 def render_data_editor(df: pd.DataFrame, key: str) -> pd.DataFrame:
-    column_order = [c for c in EXPECTED_COLS if c in df.columns]
+    # Only the requested columns, in the requested order. Everything else
+    # (system, status, flag) stays hidden for a minimal view.
+    column_order = [c for c in GRID_COLUMN_ORDER if c in df.columns]
 
-    # Build a *display* copy: friendly "● OK / ● Review / ● Critical" labels in
-    # the Status column. The raw status is recomputed on return, so downstream
-    # (overlay, Excel export) never sees these cosmetic labels.
-    display_df = df.copy()
-    if "status" in display_df.columns:
-        display_df["status"] = display_df.apply(
-            lambda r: _STATUS_DISPLAY.get(_row_status(r) or "empty", ""), axis=1
-        )
-
-    # Apply conditional formatting via a pandas Styler. Styles land on the
-    # read-only cells (incl. the coloured 'marker' rail); the editable Survey
-    # W/H cells stay plain so copy/paste + keyboard nav feel like Excel.
-    styled = display_df.style.apply(_build_row_styles, axis=None)
+    # Bright conditional formatting on the read-only Order W / Order H cells.
+    styled = df.style.apply(_build_row_styles, axis=None)
 
     edited = st.data_editor(
         styled,
@@ -555,45 +530,28 @@ def render_data_editor(df: pd.DataFrame, key: str) -> pd.DataFrame:
         hide_index=True,
         column_order=column_order,
         num_rows="fixed",
-        height=520,   # the grid is the main event — give it real room to breathe
+        height=520,
         column_config={
-            "marker":        st.column_config.TextColumn(
-                " ", disabled=True, width="small",
-                help="Tolerance flag · green = OK (≤75 mm) · "
-                     "amber = review (≤200 mm) · red = critical (>200 mm)."),
             "sales_line":    st.column_config.TextColumn("Sales Line", disabled=True, width="small"),
-            "reference":     st.column_config.TextColumn("Ref",        disabled=True, width="small"),
-            "location":      st.column_config.TextColumn("Location",   disabled=True, width="medium"),
             "description":   st.column_config.TextColumn("Config",     disabled=True, width="medium"),
-            "system":        st.column_config.TextColumn("System",     disabled=True, width="large"),
-            "order_width":   st.column_config.NumberColumn("Ord W (mm)", disabled=True, format="%d", width="small"),
-            "order_height":  st.column_config.NumberColumn("Ord H (mm)", disabled=True, format="%d", width="small"),
+            "order_width":   st.column_config.NumberColumn("Order W", disabled=True, format="%d", width="small"),
+            "order_height":  st.column_config.NumberColumn("Order H", disabled=True, format="%d", width="small"),
+            "reference":     st.column_config.TextColumn("Reference", disabled=True, width="small"),
+            "location":      st.column_config.TextColumn("Location",  disabled=True, width="medium"),
             "survey_width":  st.column_config.NumberColumn(
-                "Survey W (mm)", format="%d", width="small",
-                min_value=0, max_value=9999,
-                help="Site-measured width in mm."),
+                "Survey W", format="%d", width="small",
+                min_value=0, max_value=9999),
             "survey_height": st.column_config.NumberColumn(
-                "Survey H (mm)", format="%d", width="small",
-                min_value=0, max_value=9999,
-                help="Site-measured height in mm."),
-            "room":          st.column_config.TextColumn("Room", width="medium",
-                help="Friendly room label (e.g. 'Master Bedroom')."),
-            "remarks":       st.column_config.TextColumn("Remarks", width="large",
-                help="Free-text notes — stamped on the annotated PDF."),
-            "status":        st.column_config.TextColumn("Status", disabled=True, width="medium"),
-            "flag":          st.column_config.TextColumn(
-                "Flag", disabled=True, width="small",
-                help="⚠ Check = Ref/Location/System couldn't be confidently "
-                     "parsed from the PDF for this row. Verify against the "
-                     "source order sheet before surveying."),
+                "Survey H", format="%d", width="small",
+                min_value=0, max_value=9999),
+            "room":          st.column_config.TextColumn("Room", width="medium"),
+            "remarks":       st.column_config.TextColumn("Remarks", width="large"),
         },
     )
 
     # ---- Clean the returned frame -----------------------------------------
-    # Drop the cosmetic 'marker' rail and restore the RAW status string so the
-    # overlay engine and Excel export keep working on clean, canonical data.
-    if "marker" in edited.columns:
-        edited = edited.drop(columns=["marker"])
+    # Restore the RAW status string so the overlay engine and Excel export
+    # keep working on clean, canonical data.
     if "status" in edited.columns:
         edited["status"] = edited.apply(_row_status, axis=1)
     return edited
