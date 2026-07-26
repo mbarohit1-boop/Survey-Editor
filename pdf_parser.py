@@ -116,6 +116,15 @@ DIMENSION_RE = re.compile(r"^\s*(\d{3,4})\s*$")
 # in that order, appearing after the glazing line.
 INDENTED_VALUE_RE = re.compile(r"^\s{2,}(\S.*?)\s*$")
 
+# Anchor label that precedes the Reference/Location/System block for a given
+# line item. Without locking onto this first, the lookahead can drift onto
+# the WRONG item's subfields (or find nothing) for items whose local layout
+# doesn't match the "typical" line count — e.g. sub-panels/mullions inside a
+# combination window, which sit closer to their neighbour's anchor than to
+# their own height value.
+SUBFIELDS_ANCHOR_LABEL = "Arch Height(mm)"
+SUBFIELDS_ANCHOR_SEARCH_WINDOW = 120  # lines to look forward for the anchor
+
 # Description LOOKBACK skip list — lines to *skip* when searching backward
 # for the description string (e.g., "(XiX)/(DFix.DFix)").
 DESCRIPTION_SKIP_RE = re.compile(
@@ -168,7 +177,9 @@ def parse_survey_pdf(file_bytes: bytes) -> tuple[dict[str, Any], list[dict[str, 
 
         Each row dict keys:
             sales_line, description, system, order_width, order_height,
-            reference, location,
+            reference, location, subfields_missing (bool — True if Ref /
+            Location / System could not be confidently located and needs a
+            manual check),
             survey_width, survey_height, room, remarks   (empty placeholders)
     """
     if not file_bytes:
@@ -412,18 +423,46 @@ def _extract_rows(lines: list[str]) -> list[dict[str, Any]]:
         # Description via LOOKBACK from the sales-line (skip numeric/boilerplate).
         description = _lookback_description(lines, i)
 
-        # Reference / Location / System from the next 3 indented lines after
-        # the height. (The glazing line "SG TGH 5MM ..." sits between them
-        # and can be recovered too if needed later.)
-        subfields = _collect_indented_values(
-            lines,
-            start=h_idx + 1 if h_idx is not None else i + 1,
-            count=SUBFIELDS_COUNT,
-            max_scan=SUBFIELDS_LOOKAHEAD,
-        )
+        # Reference / Location / System — locked onto the "Arch Height(mm)"
+        # anchor first (mirrors the original v4.2 parser), THEN collected as
+        # the indented lines that follow it. Starting the scan right after
+        # the order-height value (the old approach) drifts onto the wrong
+        # item — or finds nothing — for items whose local block doesn't
+        # follow the "typical" line count (e.g. mullion/sub-panel items
+        # inside a combination window).
+        search_start = h_idx + 1 if h_idx is not None else i + 1
+        anchor_idx = _find_subfields_anchor(lines, search_start)
+
+        subfields_missing = False
+        if anchor_idx is not None:
+            subfields = _collect_indented_values(
+                lines,
+                start=anchor_idx + 1,
+                count=SUBFIELDS_COUNT,
+                max_scan=SUBFIELDS_LOOKAHEAD,
+            )
+        else:
+            # Anchor not found within the search window — fall back to the
+            # old unanchored scan so we still attempt *something*, but flag
+            # the row so the UI can surface it instead of silently showing
+            # blank cells.
+            subfields = _collect_indented_values(
+                lines,
+                start=search_start,
+                count=SUBFIELDS_COUNT,
+                max_scan=SUBFIELDS_LOOKAHEAD,
+            )
+            subfields_missing = True
+
         reference = subfields[0] if len(subfields) > 0 else ""
         location  = subfields[1] if len(subfields) > 1 else ""
         system    = subfields[2] if len(subfields) > 2 else ""
+
+        # Even with the anchor found, treat a fully-empty result as a flagged
+        # gap rather than a silent blank — surveyors need to know this item's
+        # Ref/Location/System couldn't be confirmed from the PDF text.
+        if not (reference or location or system):
+            subfields_missing = True
 
         rows.append({
             "sales_line":    sales_match.group(1),
@@ -433,6 +472,7 @@ def _extract_rows(lines: list[str]) -> list[dict[str, Any]]:
             "order_height":  order_height,
             "reference":     reference,     # e.g. "W1"
             "location":      location,      # e.g. "Bedroom abv 29F"
+            "subfields_missing": subfields_missing,  # True => needs manual check
             # Empty placeholders — filled in by the survey UI later
             "survey_width":  None,
             "survey_height": None,
@@ -479,6 +519,21 @@ def _lookback_description(lines: list[str], sales_idx: int) -> str:
             continue
         return candidate
     return ""
+
+
+def _find_subfields_anchor(lines: list[str], start: int) -> int | None:
+    """
+    Find the "Arch Height(mm)" label that anchors this item's Reference /
+    Location / System block, searching forward from `start` within
+    SUBFIELDS_ANCHOR_SEARCH_WINDOW lines.
+
+    Returns the index of the anchor line, or None if not found in range.
+    """
+    end = min(start + SUBFIELDS_ANCHOR_SEARCH_WINDOW, len(lines))
+    for j in range(start, end):
+        if SUBFIELDS_ANCHOR_LABEL in lines[j]:
+            return j
+    return None
 
 
 def _collect_indented_values(
