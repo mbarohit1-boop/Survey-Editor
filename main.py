@@ -14,9 +14,12 @@ This file also incorporates the Module 6 polish pass:
 
 from __future__ import annotations
 
+import base64
 import io
 import re
 from datetime import datetime
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -25,6 +28,25 @@ import streamlit as st
 from pdf_parser import parse_survey_pdf
 from overlay import overlay_survey_data
 from utils import row_tolerance
+
+# -----------------------------------------------------------------------------
+# Branding — Fenesta logo
+# -----------------------------------------------------------------------------
+# The logo ships as an asset next to this file (assets/fenesta-logo.png).
+# We read it once and cache a base64 data-URI so it can be dropped straight into
+# any HTML/CSS markup — no external hosting or network fetch required.
+LOGO_PATH = Path(__file__).parent / "assets" / "fenesta-logo.png"
+
+
+@lru_cache(maxsize=1)
+def logo_data_uri() -> str:
+    """Return the Fenesta logo as a base64 PNG data-URI (empty str if missing)."""
+    try:
+        raw = LOGO_PATH.read_bytes()
+    except (FileNotFoundError, OSError):
+        return ""
+    b64 = base64.b64encode(raw).decode("ascii")
+    return f"data:image/png;base64,{b64}"
 
 # -----------------------------------------------------------------------------
 # Conditional-formatting palette for the survey grid.
@@ -72,7 +94,7 @@ def _cell_highlight(order_val, survey_val) -> str:
 # =============================================================================
 st.set_page_config(
     page_title="WCS Survey Editor",
-    page_icon="🪟",
+    page_icon=str(LOGO_PATH) if LOGO_PATH.exists() else "🪟",
     layout="wide",
     initial_sidebar_state="expanded",
     menu_items={
@@ -118,8 +140,12 @@ CUSTOM_CSS = """
         display: flex; align-items: center; justify-content: space-between;
         margin-bottom: 10px;
     }
-    .wcs-header .wcs-title { display: flex; align-items: center; gap: 8px; }
+    .wcs-header .wcs-title { display: flex; align-items: center; gap: 10px; }
     .wcs-header .wcs-title .wcs-logo { font-size: 16px; line-height: 1; }
+    .wcs-header .wcs-title .wcs-logo-img { height: 26px; width: auto; display: block; }
+    .wcs-header .wcs-title .wcs-divider {
+        width: 1px; height: 20px; background: var(--wcs-border); display: inline-block;
+    }
     .wcs-header .wcs-title h1 { font-size: 14px; margin: 0; font-weight: 600; color: var(--wcs-ink); }
     .wcs-header .wcs-title p  { display: none; }  /* tagline dropped — noise, not needed every load */
     .wcs-header .wcs-meta     { text-align: right; font-size: 11px; color: var(--wcs-muted); }
@@ -235,6 +261,7 @@ CUSTOM_CSS = """
         padding: 32px 28px; text-align: center; margin: 6px 0 16px 0;
     }
     .empty-hero .hero-icon { font-size: 40px; line-height: 1; margin-bottom: 8px; }
+    .empty-hero .hero-logo-img { height: 54px; width: auto; margin: 0 auto 14px auto; display: block; }
     .empty-hero h2 { margin: 0 0 6px 0; color: var(--wcs-ink); font-size: 18px; font-weight: 600; }
     .empty-hero p  { margin: 0 auto; color: var(--wcs-muted); font-size: 13px; max-width: 600px; }
     .empty-steps {
@@ -288,14 +315,20 @@ EDIT_COLUMNS = ("survey_width", "survey_height", "room", "remarks")
 # Header, legend, sidebar
 # =============================================================================
 def render_header() -> None:
+    uri = logo_data_uri()
+    logo_html = (
+        f'<img class="wcs-logo-img" src="{uri}" alt="Fenesta" />'
+        if uri else '<div class="wcs-logo">🪟</div>'
+    )
     st.markdown(
-        """
+        f"""
         <div class="wcs-header">
             <div class="wcs-title">
-                <div class="wcs-logo">🪟</div>
+                {logo_html}
+                <span class="wcs-divider"></span>
                 <div><h1>WCS Survey Editor</h1></div>
             </div>
-            <div class="wcs-meta">Fenesta · v0.5.0</div>
+            <div class="wcs-meta">v0.5.0</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -944,10 +977,15 @@ def render_excel_export(results: list[dict[str, Any]]) -> None:
 # Empty state (Module 6 polish)
 # =============================================================================
 def render_empty_state() -> None:
+    uri = logo_data_uri()
+    hero_logo = (
+        f'<img class="hero-logo-img" src="{uri}" alt="Fenesta" />'
+        if uri else '<div class="hero-icon">🪟</div>'
+    )
     st.markdown(
-        """
+        f"""
         <div class="empty-hero">
-            <div class="hero-icon">🪟</div>
+            {hero_logo}
             <h2>Welcome to WCS Survey Editor</h2>
             <p>
                 Upload one or more <strong>Fenesta WCS Report PDFs</strong> to begin.
@@ -967,7 +1005,7 @@ def render_empty_state() -> None:
                 </div>
                 <div class="empty-step">
                     <div><span class="step-num">3</span><span class="step-title">Watch tolerance</span></div>
-                    <div class="step-body">Green / amber / red counts update live.</div>
+                    <div class="step-body">Order W/H highlight yellow &gt;75 mm, red &gt;200 mm.</div>
                 </div>
                 <div class="empty-step">
                     <div><span class="step-num">4</span><span class="step-title">Download</span></div>
