@@ -26,6 +26,22 @@ from pdf_parser import parse_survey_pdf
 from overlay import overlay_survey_data
 from utils import row_tolerance
 
+# -----------------------------------------------------------------------------
+# Optional AgGrid — powers LIVE per-cell conditional formatting in the survey
+# grid. If the package isn't installed we fall back to st.data_editor (which
+# cannot recolour cells live). Install with:  pip install streamlit-aggrid
+# -----------------------------------------------------------------------------
+try:
+    from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
+    from st_aggrid import DataReturnMode
+    _HAS_AGGRID = True
+except Exception:  # pragma: no cover - import guard
+    _HAS_AGGRID = False
+
+# Tolerance thresholds for cell highlighting (mm)
+TOL_WARN_MM = 75    # > 75 mm  -> yellow
+TOL_DANGER_MM = 200  # > 200 mm -> red
+
 
 # =============================================================================
 # Page configuration
@@ -439,7 +455,117 @@ def rows_to_dataframe(rows: list[dict[str, Any]]) -> pd.DataFrame:
     return df
 
 
-def render_data_editor(df: pd.DataFrame, key: str) -> pd.DataFrame:
+# -----------------------------------------------------------------------------
+# JavaScript cell-style factory (AgGrid). Colours a Survey cell based on the
+# absolute difference between its Order value and its Survey value:
+#     diff <= 75 mm   -> green   (within tolerance)
+#     75 < diff <= 200 -> yellow (borderline — review)
+#     diff > 200 mm   -> red     (out of tolerance — critical)
+# Empty / unmeasured cells are left un-tinted so surveyors can see what's left.
+# -----------------------------------------------------------------------------
+def _cell_style_js(order_field: str) -> "JsCode":
+    return JsCode(
+        f"""
+        function(params) {{
+            var s = params.value;
+            var o = params.data['{order_field}'];
+            if (s === null || s === undefined || s === '' ||
+                o === null || o === undefined || o === '') {{
+                return {{'textAlign': 'right'}};
+            }}
+            var diff = Math.abs(Number(o) - Number(s));
+            if (isNaN(diff)) {{ return {{'textAlign': 'right'}}; }}
+            if (diff > {TOL_DANGER_MM}) {{
+                return {{'backgroundColor': '#ff4d4d', 'color': 'white',
+                         'fontWeight': 'bold', 'textAlign': 'right'}};
+            }}
+            if (diff > {TOL_WARN_MM}) {{
+                return {{'backgroundColor': '#ffd966', 'color': '#000',
+                         'textAlign': 'right'}};
+            }}
+            return {{'backgroundColor': '#c6efce', 'color': '#000',
+                     'textAlign': 'right'}};
+        }}
+        """
+    )
+
+
+def _render_data_editor_aggrid(df: pd.DataFrame, key: str) -> pd.DataFrame:
+    """AgGrid grid with LIVE per-cell conditional formatting on Survey W/H."""
+    column_order = [c for c in EXPECTED_COLS if c in df.columns]
+    df = df[column_order].copy()
+
+    # AgGrid serialises NaN oddly — keep survey cells as clean blanks/numbers.
+    for col in ("order_width", "order_height", "survey_width", "survey_height"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    gb = GridOptionsBuilder.from_dataframe(df)
+    gb.configure_default_column(
+        editable=False, resizable=True, sortable=True,
+        filter=True, wrapText=False,
+    )
+
+    headers = {
+        "sales_line": "Sales Line", "reference": "Ref", "location": "Location",
+        "description": "Config", "system": "System",
+        "order_width": "Ord W (mm)", "order_height": "Ord H (mm)",
+        "survey_width": "Survey W (mm)", "survey_height": "Survey H (mm)",
+        "room": "Room", "remarks": "Remarks", "status": "Status", "flag": "Flag",
+    }
+    for f, h in headers.items():
+        if f in df.columns:
+            gb.configure_column(f, header_name=h)
+
+    # Editable survey/notes columns
+    for f in ("survey_width", "survey_height"):
+        if f in df.columns:
+            gb.configure_column(
+                f,
+                editable=True,
+                type=["numericColumn", "numberColumnFilter"],
+                cellStyle=_cell_style_js(
+                    "order_width" if f == "survey_width" else "order_height"
+                ),
+            )
+    for f in ("room", "remarks"):
+        if f in df.columns:
+            gb.configure_column(f, editable=True)
+
+    gb.configure_grid_options(
+        singleClickEdit=True,
+        stopEditingWhenCellsLoseFocus=True,
+        enterNavigatesVertically=True,
+        enterNavigatesVerticallyAfterEdit=True,
+    )
+
+    grid_response = AgGrid(
+        df,
+        gridOptions=gb.build(),
+        key=key,
+        height=520,
+        theme="balham",
+        allow_unsafe_jscode=True,          # required for JsCode cellStyle
+        update_mode=GridUpdateMode.MODEL_CHANGED,
+        data_return_mode=DataReturnMode.AS_INPUT,
+        fit_columns_on_grid_load=False,
+        reload_data=False,
+    )
+
+    edited = pd.DataFrame(grid_response["data"])
+    # Re-coerce numerics after the round-trip through the JS grid.
+    for col in ("order_width", "order_height", "survey_width", "survey_height"):
+        if col in edited.columns:
+            edited[col] = pd.to_numeric(edited[col], errors="coerce")
+    return edited
+
+
+def _render_data_editor_fallback(df: pd.DataFrame, key: str) -> pd.DataFrame:
+    """Fallback grid (st.data_editor) — no live cell tinting available."""
+    st.caption(
+        "ℹ️ Install `streamlit-aggrid` (`pip install streamlit-aggrid`) to enable "
+        "live cell highlighting. Showing the standard editor for now."
+    )
     column_order = [c for c in EXPECTED_COLS if c in df.columns]
     edited = st.data_editor(
         df,
@@ -478,6 +604,21 @@ def render_data_editor(df: pd.DataFrame, key: str) -> pd.DataFrame:
         },
     )
     return edited
+
+
+def render_data_editor(df: pd.DataFrame, key: str) -> pd.DataFrame:
+    """
+    Render the survey grid with LIVE per-cell conditional formatting.
+
+    Survey W / Survey H cells recolour the instant a value is entered:
+        • diff ≤ 75 mm   -> green
+        • 75 < diff ≤ 200 -> yellow
+        • diff > 200 mm  -> red
+    Uses AgGrid when available; otherwise falls back to st.data_editor.
+    """
+    if _HAS_AGGRID:
+        return _render_data_editor_aggrid(df, key)
+    return _render_data_editor_fallback(df, key)
 
 
 # =============================================================================
